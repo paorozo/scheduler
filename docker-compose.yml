@@ -29,6 +29,16 @@ services:
       - .:/app
     entrypoint: ["black", "."]
 
+  test:
+    build: .
+    command: pytest --cov=./ --cov-config=.coveragerc --cov-report=html
+    environment:
+      PYTHONPATH: .
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+
 volumes:
   postgres_data:
 
