@@ -24,7 +24,9 @@ def test_create_task(mock_db_session):
     # Assertions
     assert task.url == url
     assert task.created_at <= datetime.now(timezone.utc)
-    assert task.expiration_time == task.created_at + timedelta(hours=hours, minutes=minutes, seconds=seconds)
+    assert task.expiration_time == task.created_at + timedelta(
+        hours=hours, minutes=minutes, seconds=seconds
+    )
     assert task.time_left() > 0
 
     # Ensure that the database session methods were called
@@ -38,10 +40,13 @@ def test_get_task(mock_db_session):
     task_id = 1
 
     # Configure the expected return when querying by ID
-    expected_task = Task(id=task_id, url="https://example.com",
-                         created_at=datetime.now(timezone.utc),
-                         expiration_time=datetime.now(timezone.utc) + timedelta(hours=1),
-                         task_triggered=False)
+    expected_task = Task(
+        id=task_id,
+        url="https://example.com",
+        created_at=datetime.now(timezone.utc),
+        expiration_time=datetime.now(timezone.utc) + timedelta(hours=1),
+        task_triggered=False,
+    )
     # Mock the query method chain
     mock_query = mock_db_session.query.return_value
     mock_filter = mock_query.filter.return_value
@@ -89,7 +94,7 @@ def test_time_left_after_expiration():
         url="https://example.com",
         created_at=datetime.now(timezone.utc) - timedelta(hours=2),
         expiration_time=datetime.now(timezone.utc) - timedelta(hours=1),
-        task_triggered=False
+        task_triggered=False,
     )
 
     # Assertions
