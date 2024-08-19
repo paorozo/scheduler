@@ -1,8 +1,9 @@
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime, timedelta, timezone
 
 DATABASE_URL = "postgresql://user:password@db/dbname"
 
@@ -15,39 +16,25 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    hours = Column(Integer, nullable=False)
-    minutes = Column(Integer, nullable=False)
-    seconds = Column(Integer, nullable=False)
     url = Column(String, nullable=True)
-    timer_triggered = Column(Boolean, default=False)
-    created_at = Column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
-    )
-
-    def get_expiration_time(self) -> datetime:
-        expiration_delta = timedelta(
-            hours=self.hours, minutes=self.minutes, seconds=self.seconds
-        )
-        if self.created_at.tzinfo is None:
-            self.created_at = self.created_at.replace(tzinfo=timezone.utc)
-
-        expiration_time = self.created_at + expiration_delta
-        print(
-            f"Created At: {self.created_at}, Expiration Delta: {expiration_delta}, Expiration Time: {expiration_time}"
-        )
-
-        return expiration_time
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    expiration_time = Column(DateTime(timezone=True), nullable=False)
+    task_triggered = Column(Boolean, default=False)
 
     def time_left(self) -> int:
-        expiration_time = self.get_expiration_time()
         now = datetime.now(timezone.utc)
-        print(f"Now: {now}, Expiration Time: {expiration_time}")
-        remaining_time = expiration_time - now
+        remaining_time = self.expiration_time - now
         return max(0, int(remaining_time.total_seconds()))
 
 
 def create_task(db, hours: int, minutes: int, seconds: int, url: str):
-    new_task = Task(hours=hours, minutes=minutes, seconds=seconds, url=url)
+    created_at = datetime.now(timezone.utc)
+    expiration_delta = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    expiration_time = created_at + expiration_delta
+
+    new_task = Task(url=url, created_at=created_at, expiration_time=expiration_time)
     db.add(new_task)
     db.commit()
     db.refresh(new_task)

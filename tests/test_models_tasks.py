@@ -1,69 +1,118 @@
-from unittest.mock import MagicMock, patch
+import pytest
+from unittest.mock import MagicMock, ANY
+from datetime import datetime, timedelta, timezone
+
 from models.task import Task, create_task, get_task
-from datetime import datetime, timezone, timedelta
 
 
-@patch("models.task.SessionLocal")
-def test_create_task(mock_session):
-    # Mock the database session
-    mock_db = MagicMock()
-    mock_session.return_value = mock_db
+@pytest.fixture
+def mock_db_session():
+    # Create a MagicMock object to simulate the database session
+    return MagicMock()
 
-    hours, minutes, seconds = 1, 30, 15
-    url = "http://example.com"
 
-    task = create_task(mock_db, hours=hours, minutes=minutes, seconds=seconds, url=url)
+def test_create_task(mock_db_session):
+    # Setup input data
+    hours = 1
+    minutes = 30
+    seconds = 15
+    url = "https://example.com"
 
-    assert task.hours == hours
-    assert task.minutes == minutes
-    assert task.seconds == seconds
+    # Call the create_task function with the mock
+    task = create_task(mock_db_session, hours, minutes, seconds, url)
+
+    # Assertions
     assert task.url == url
-    mock_db.add.assert_called_once_with(task)
-    mock_db.commit.assert_called_once()
-    mock_db.refresh.assert_called_once_with(task)
+    assert task.created_at <= datetime.now(timezone.utc)
+    assert task.expiration_time == task.created_at + timedelta(hours=hours, minutes=minutes, seconds=seconds)
+    assert task.time_left() > 0
+
+    # Ensure that the database session methods were called
+    mock_db_session.add.assert_called_once_with(task)
+    mock_db_session.commit.assert_called_once()
+    mock_db_session.refresh.assert_called_once_with(task)
 
 
-@patch("models.task.SessionLocal")
-def test_get_task(mock_session):
-    # Mock the database session
-    mock_db = MagicMock()
-    mock_session.return_value = mock_db
+def test_get_task(mock_db_session):
+    # Setup input data
+    task_id = 1
 
-    mock_task = Task(id=1, hours=1, minutes=30, seconds=15, url="http://example.com")
-    mock_db.query.return_value.filter.return_value.first.return_value = mock_task
+    # Configure the expected return when querying by ID
+    expected_task = Task(id=task_id, url="https://example.com",
+                         created_at=datetime.now(timezone.utc),
+                         expiration_time=datetime.now(timezone.utc) + timedelta(hours=1),
+                         task_triggered=False)
+    # Mock the query method chain
+    mock_query = mock_db_session.query.return_value
+    mock_filter = mock_query.filter.return_value
+    mock_filter.first.return_value = expected_task
 
-    task = get_task(mock_db, task_id=1)
+    # Call the get_task function with the mock
+    task = get_task(mock_db_session, task_id)
 
-    assert task.id == 1
-    assert task.hours == 1
-    assert task.minutes == 30
-    assert task.seconds == 15
-    assert task.url == "http://example.com"
+    # Assertions
+    assert task == expected_task
+    assert task.id == task_id
+    assert task.url == "https://example.com"
+
+    # Ensure that the correct query was made
+    mock_db_session.query.assert_called_once_with(Task)
+    mock_query.filter.assert_called_once_with(ANY)
+    mock_filter.first.assert_called_once()
 
 
-def test_get_expiration_time():
-    task = Task(hours=1, minutes=30, seconds=15, created_at=datetime.now(timezone.utc))
-    expiration_time = task.get_expiration_time()
+def test_get_nonexistent_task(mock_db_session):
+    # Setup input data
+    task_id = 999  # Assuming this task ID does not exist
 
-    expected_expiration_time = task.created_at + timedelta(
-        hours=1, minutes=30, seconds=15
+    # Mock the query method chain to return None
+    mock_query = mock_db_session.query.return_value
+    mock_filter = mock_query.filter.return_value
+    mock_filter.first.return_value = None
+
+    # Call the get_task function with the mock
+    task = get_task(mock_db_session, task_id)
+
+    # Assertions
+    assert task is None  # The task should not be found
+
+    # Ensure that the correct query was made
+    mock_db_session.query.assert_called_once_with(Task)
+    mock_query.filter.assert_called_once_with(ANY)
+    mock_filter.first.assert_called_once()
+
+
+def test_time_left_after_expiration():
+    # Setup a task that has already expired
+    expired_task = Task(
+        id=1,
+        url="https://example.com",
+        created_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        expiration_time=datetime.now(timezone.utc) - timedelta(hours=1),
+        task_triggered=False
     )
-    assert expiration_time == expected_expiration_time
+
+    # Assertions
+    assert expired_task.time_left() == 0  # Time left should be 0 because it's expired
 
 
-def test_time_left():
-    task = Task(
-        hours=0,
-        minutes=1,
-        seconds=0,
-        created_at=datetime.now(timezone.utc) - timedelta(seconds=30),
-    )
+def test_create_task_failure(mock_db_session):
+    # Setup input data
+    hours = 1
+    minutes = 30
+    seconds = 15
+    url = "https://example.com"
 
-    time_left = task.time_left()
-    assert 29 <= time_left <= 31  # Should be approximately 30 seconds remaining
+    # Simulate a failure when adding a task to the session
+    mock_db_session.add.side_effect = Exception("Failed to add task")
 
-    # Simulate time expiration
-    task.created_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+    # Call the create_task function with the mock and catch the exception
+    with pytest.raises(Exception) as excinfo:
+        create_task(mock_db_session, hours, minutes, seconds, url)
 
-    time_left = task.time_left()
-    assert time_left == 0
+    # Assertions
+    assert str(excinfo.value) == "Failed to add task"
+
+    # Ensure that commit and refresh were not called due to the failure
+    mock_db_session.commit.assert_not_called()
+    mock_db_session.refresh.assert_not_called()
