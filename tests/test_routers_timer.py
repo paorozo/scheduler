@@ -1,56 +1,46 @@
-# from fastapi.testclient import TestClient
-# from unittest.mock import MagicMock
-# import pytest
-#
-# from main import app
-# from models.task import Task
-# from datetime import datetime, timedelta, timezone
-#
-# client = TestClient(app)
-#
-#
-# @pytest.fixture
-# def mock_db_session():
-#     return MagicMock()
-#
-#
-# def test_set_timer(mock_db_session, monkeypatch):
-#     task_mock = Task(
-#         id=1,
-#         created_at=datetime.now(timezone.utc),
-#         expiration_time=datetime.now(timezone.utc),
-#         url="http://example.com",
-#     )
-#     task_mock.time_left = MagicMock(return_value=3600)
-#
-#     monkeypatch.setattr("models.task.create_task", MagicMock(return_value=task_mock))
-#
-#     response = client.post(
-#         "/timer",
-#         params={"hours": 1, "minutes": 0, "seconds": 0, "url": "http://example.com"},
-#     )
-#     response_json = response.json()
-#
-#     assert response.status_code == 200
-#     assert isinstance(response_json["id"], int) and response_json["id"] > 0
-#
-#
-# def test_get_timer(mock_db_session, monkeypatch):
-#     task_mock = Task(
-#         id=1,
-#         created_at=datetime.now(timezone.utc),
-#         expiration_time=datetime.now(timezone.utc) + timedelta(hours=1),
-#         url="http://example.com",
-#     )
-#
-#     task_mock.time_left = lambda: 3600
-#
-#     monkeypatch.setattr("models.task.get_task", MagicMock(return_value=task_mock))
-#
-#     response = client.get(
-#         "/timer/1",
-#     )
-#     response_json = response.json()
-#
-#     assert response.status_code == 200
-#     print(f"JSON RESPONSE {response_json}")
+from datetime import datetime, timezone
+from unittest.mock import patch, MagicMock
+
+from fastapi.testclient import TestClient
+
+from main import app
+
+client = TestClient(app)
+
+
+@patch("models.task.create_task")
+@patch("services.task_service.trigger_webhook")
+@patch("datetime.datetime")
+def test_set_timer(mock_datetime, mock_trigger_webhook, mock_create_task):
+    """
+    Test setting a task that will expire in 1 hour
+    """
+    fixed_now = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    mock_datetime.now.return_value = fixed_now
+    mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+    mock_task = MagicMock()
+    mock_task.id = 1
+    mock_task.url = "http://example.com"
+
+    mock_create_task.return_value = mock_task
+
+    response = client.post(
+        "/timer", params={"hours": 1, "minutes": 0, "seconds": 0, "url": "example.com"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["time_left"] == 3599
+
+
+@patch("models.task.get_task")
+def test_get_timer_task_not_found(mock_get_task):
+    """
+    Test getting a task that does not exist
+    """
+    mock_get_task.return_value = None
+
+    response = client.get("/timer/1")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Task not found"}

@@ -10,6 +10,9 @@ Base = declarative_base()
 
 
 def get_db():
+    """
+    This function returns a new session to the database.
+    """
     db = SessionLocal()
     try:
         yield db

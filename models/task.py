@@ -22,6 +22,9 @@ class Task(Base):
     task_triggered = Column(Boolean, default=False)
 
     def time_left(self) -> int:
+        """
+        This function returns the time left in seconds until the expiration time.
+        """
         now = datetime.now(timezone.utc)
         remaining_time = self.expiration_time - now
         return max(0, int(remaining_time.total_seconds()))
